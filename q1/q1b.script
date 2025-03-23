@@ -8,5 +8,5 @@
 #SBATCH --job-name=alston_q1
 #SBATCH --mem=50G
 #SBATCH --partition=courses
-mpirun -mca btl_base_warn_component_unused 0 ~/eece5640-hw4/q1/q1a
+mpirun -mca btl_base_warn_component_unused 0 ~/eece5640-hw4/q1/q1b
 
