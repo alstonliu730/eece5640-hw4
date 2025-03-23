@@ -4,8 +4,7 @@
 
 #define NUM_PROCESSES 64 
 int main() {
-    int numprocs, rank, value, namelen;
-    uint8_t phase = 0;
+    int numprocs, rank, value, namelen, phase = 0;
     char proc_name[MPI_MAX_PROCESSOR_NAME];
 
     MPI_Init(NULL, NULL);
@@ -28,36 +27,40 @@ int main() {
         value ++;
         // Send the value and phase
         MPI_Send(&value, 1, MPI_INT, rank + 1, 0, MPI_COMM_WORLD);
-        MPI_Send(&phase, 1, MPI_UINT8_T, rank + 1, 0, MPI_COMM_WORLD);
-    } 
+    }
 
-    // first phase 
+    // first phase
     else if (phase == 0) {
         // Receive value and phase
         MPI_Recv(&value, 1, MPI_INT, rank - 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&phase, 1, MPI_UINT8_T, rank - 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-        // print result 
+        // print result
         printf("Process %d from Node %s received value in phase %d: %d\n", rank, proc_name, phase, value);
-        
+
         if (value < NUM_PROCESSES) {
             value++;
-            if (rank < NUM_PROCESSES - 1) {
+	    if (rank < NUM_PROCESSES - 1) {
                 MPI_Send(&value, 1, MPI_INT, rank + 1, 0, MPI_COMM_WORLD);
-                MPI_Send(&phase, 1, MPI_UINT8_T, rank + 1, 0, MPI_COMM_WORLD);
             } else {
                 // switch to second phase (reverse flow)
+		printf("Switching to new phase.\n");
                 phase = 1;
-                MPI_Send(&value, 1, MPI_INT, rank - 1, 0, MPI_COMM_WORLD);
-                MPI_Send(&phase, 1, MPI_UINT8_T, rank - 1, 0, MPI_COMM_WORLD);
-            }
+	    }
         }
-    } 
+    }
+
+    // second phase intial phase
+    if (rank >= NUM_PROCESSES - 1 && phase == 1) {
+	printf("Process %d from Node %s received value in phase %d: %d\n", rank, proc_name, phase, value);
+	value -= 2;
+	MPI_Send(&value, 1, MPI_INT, rank - 1, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&phase, 1, MPI_INT, rank, MPI_COMM_WORLD);
+    }
+
     // second phase
     else if (phase == 1) {
         // Receive value and phase from node in front
         MPI_Recv(&value, 1, MPI_INT, rank + 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&phase, 1, MPI_UINT8_T, rank + 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
         // print result
         printf("Process %d from Node %s received value in phase %d: %d\n", rank, proc_name, phase, value);
@@ -65,7 +68,6 @@ int main() {
         if (value > 0) {
             value -= 2;
             MPI_Send(&value, 1, MPI_INT, rank - 1, 0, MPI_COMM_WORLD);
-            MPI_Send(&phase, 1, MPI_UINT8_T, rank - 1, 0, MPI_COMM_WORLD);
         }
 
     }
