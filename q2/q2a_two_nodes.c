@@ -10,12 +10,6 @@
 #define NUM_BINS 128
 #define ROOT_RANK 0
 
-double CLOCK() {
-    struct timespec t;
-    clock_gettime(CLOCK_MONOTONIC, &t);
-    return (t.tv_sec * 1000) + (t.tv_nsec*1e-6);
-}
-
 // Function to generate random integers in the range [1, 100000]
 int* generateRandomData(int numElements, time_t seed) {
     int* data = (int*)malloc(numElements * sizeof(int));
@@ -32,11 +26,12 @@ int* generateRandomData(int numElements, time_t seed) {
 
 int main(int argc, char** argv) {
     // start benchmark
-    double total, t1, t2;
-    t1 = CLOCK();
-    
+    double total;
+
     // Initialize MPI
     MPI_Init(&argc, &argv);
+    double localTotal, t1, t2;
+    t1 = MPI_Wtime();
 
     int world_rank, world_size;
     MPI_Comm_size(MPI_COMM_WORLD, &world_size); // get number of processes
@@ -112,14 +107,17 @@ int main(int argc, char** argv) {
     free(localData);
     free(localHistogram);
 
+    // Benchmark ends
+    t2 = MPI_Wtime();
+    localTotal = t2 - t1;
+
+    MPI_Reduce(&localTotal, &total, 1, MPI_DOUBLE, MPI_SUM, ROOT_RANK, MPI_COMM_WORLD);
+    
+    if (world_rank == ROOT_RANK) {
+        printf("Time Elapsed: %lfms\n", total);
+    }
+
     // Finalize MPI
     MPI_Finalize();
-
-    // Benchmark ends
-    t2 = CLOCK();
-    total = t2 - t1;
-
-    printf("Time Elapsed: %lfms\n", total);
-
     return 0;
 }
