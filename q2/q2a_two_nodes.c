@@ -10,12 +10,17 @@
 #define NUM_BINS 128
 #define ROOT_RANK 0
 
-const int seed = time(NULL);
+double CLOCK() {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (t.tv_sec * 1000) + (t.tv_nsec*1e-6);
+}
+
 // Function to generate random integers in the range [1, 100000]
-int* generateRandomData(int numElements, int seed) {
+int* generateRandomData(int numElements, time_t seed) {
     int* data = (int*)malloc(numElements * sizeof(int));
     if (data == NULL) {
-        perror("Failed to allocate memory for data");
+        printf("Failed to allocate memory for data");
         return NULL;
     }
     srand(seed);
@@ -26,6 +31,10 @@ int* generateRandomData(int numElements, int seed) {
 }
 
 int main(int argc, char** argv) {
+    // start benchmark
+    double total, t1, t2;
+    t1 = CLOCK();
+    
     // Initialize MPI
     MPI_Init(&argc, &argv);
 
@@ -41,7 +50,8 @@ int main(int argc, char** argv) {
     
     // let the root rank create the data array
     if (world_rank == ROOT_RANK) {
-        data = generateRandomData(dataSize, seed);
+        time_t seed = time(NULL);
+        data = generateRandomData(DATA_SIZE, seed);
         if (data == NULL) {
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
@@ -76,7 +86,7 @@ int main(int argc, char** argv) {
     if (world_rank == ROOT_RANK) {
         globalHistogram = (int*)calloc(NUM_BINS, sizeof(int));
          if (globalHistogram == NULL) {
-            print("Rank %d: Failed to allocate memory for global histogram\n", world_rank);
+            fprintf(stderr, "Rank %d: Failed to allocate memory for global histogram\n", world_rank);
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
     }
@@ -104,5 +114,12 @@ int main(int argc, char** argv) {
 
     // Finalize MPI
     MPI_Finalize();
+
+    // Benchmark ends
+    t2 = CLOCK();
+    total = t2 - t1;
+
+    printf("Time Elapsed: %lfms\n", total);
+
     return 0;
 }
