@@ -6,6 +6,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --time=00:15:00
 #SBATCH --job-name=q2a_2_alston
+#SBATCH -o slurm_q2a_two_nodes.out
 #SBATCH --mem=100G
 #SBATCH --partition=courses
 mpirun -mca btl_base_warn_component_unused 0 ~/eece5640-hw4/q2/q2a_two_nodes
