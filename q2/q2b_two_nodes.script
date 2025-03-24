@@ -1,0 +1,12 @@
+#!/bin/bash
+#SBATCH --verbose
+#SBATCH --nodes=2
+#SBATCH --nodelist=c[0443-0451,0453-0487,0744-0751,0753-0759]
+#SBATCH --ntasks-per-node=16
+#SBATCH --cpus-per-task=1
+#SBATCH --time=00:30:00
+#SBATCH --job-name=q2b_2_alston
+#SBATCH -o slurm_q2b_two_nodes.out
+#SBATCH --mem=100G
+#SBATCH --partition=courses
+mpirun -mca btl_base_warn_component_unused 0 ~/eece5640-hw4/q2/q2b_two_nodes
