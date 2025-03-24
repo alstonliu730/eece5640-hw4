@@ -2,6 +2,7 @@ CC = mpicc
 CFLAGS = -Wall -Wextra -g -O2
 
 TARGETS = q1a q1b
+all: $(TARGETS)
 
 q1a: q1a.c
 	$(CC) $(CFLAGS) -o $@ $<
