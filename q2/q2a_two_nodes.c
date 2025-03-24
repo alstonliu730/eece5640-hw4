@@ -1,47 +1,53 @@
 #include <stdio.h>
-#include "mpi.h"
 #include <stdlib.h>
-#include <time.h>
+#include <mpi.h>
 #include <math.h>
+#include <time.h>
 
-#define NUM_INTEGERS 8000000
-#define NUM_BINS 128
-#define MAX_VAL 100000
-#define ROOT_RANK 0
-#define MAX_PROCS_PER_NODE 16
-
-// fill data array with random numbers
-void generate_random_data(int *data, int size, time_t seed) {
-    // allocate dynamic memory for the size
-    data = (int*)malloc(size * sizeof(int));
+// Function to generate random integers in the range [1, 100000]
+int* generateRandomData(int numElements, int seed) {
+    int* data = (int*)malloc(numElements * sizeof(int));
     if (data == NULL) {
-        printf("Failed to allocate memory for data.\n");
+        perror("Failed to allocate memory for data");
         return NULL;
     }
-
-    // initialize pseudo random number generator
     srand(seed);
-
-    // Generate integers bwt. 1 and MAX_VAL
-    for (int i = 0; i < size; i++) {
-        data[i] = rand() % MAX_VAL + 1; 
+    for (int i = 0; i < numElements; ++i) {
+        data[i] = (rand() % 100000) + 1;
     }
+    return data;
 }
 
 int main(int argc, char** argv) {
-    int world_size, world_rank;
-    char proc_name[MPI_MAX_PROCESSOR_NAME];
-
+    // Initialize MPI
     MPI_Init(&argc, &argv);
-    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-    // Determine number of nodes
-    int numNodes = (world_size + MAX_PROCS_PER_NODE - 1) / MAX_PROCS_PER_NODE;
 
-    // calculate the bin range per process
-    int binsPerProcess = NUM_BINS / world_size;
-    int extraBins = NUM_BINS % world_size;
-    int currNumBins;
+    int world_rank, world_size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+    // Parameters
+    const int dataSize = 8000000;
+    const int numBins = 128;
+    const int rootRank = 0;
+    const int maxProcsPerNode = 16;
+
+    // Determine the number of nodes
+    int numNodes = (world_size + maxProcsPerNode - 1) / maxProcsPerNode;
+
+    // Check if the number of nodes is 2 or 4
+    if (numNodes != 2 && numNodes != 4) {
+        if (world_rank == rootRank) {
+            fprintf(stderr, "Error: The number of nodes must be 2 or 4.  Currently %d nodes.\n", numNodes);
+        }
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    // Calculate bins per process.  With this many processes, we can't assign
+    // one bin per process.
+    int binsPerProcess = numBins / world_size;
+    int extraBins = numBins % world_size;  // Handle uneven distribution
+    int myNumBins;
     int myStartBin;
 
     // Determine the bins for this process
@@ -50,73 +56,99 @@ int main(int argc, char** argv) {
         myStartBin = world_rank * (binsPerProcess + 1);
     } else {
         myNumBins = binsPerProcess;
-        myStartBin = world_rank * (binsPerProcess + 1) + (world_rank - extraBins) * binsPerProcess;
+        myStartBin = extraBins * (binsPerProcess + 1) + (world_rank - extraBins) * binsPerProcess;
     }
-
     // Calculate the range of each bin
-    double binWidth = (double)(MAX_VAL) / NUM_BINS;
+    int minVal = 1;
+    int maxVal = 100000;
+    double binWidth = (double)(maxVal - minVal + 1) / numBins;
 
-    // Generate random data
+    // Generate the data
     int* data = NULL;
-    if (world_rank == ROOT_RANK) {
-        time_t seed = time(NULL);
-        generate_random_data(data, NUM_INTEGERS, seed);
-        if (data == NULL) {
+    int seed = 42;
+    if (world_rank == rootRank) {
+        data = generateRandomData(dataSize, seed);
+         if (data == NULL) {
             MPI_Abort(MPI_COMM_WORLD, 1);
-            return 1;
         }
     }
 
-    // Scatter a part of the data array to all processes
-    int localDataSize = NUM_INTEGERS / world_size;
-    int* localData = (int*) malloc(localDataSize * sizeof(int));
+    // Distribute the data among processes
+     int localDataSize = dataSize / world_size;
+    int* localData = (int*)malloc(localDataSize * sizeof(int));
     if (localData == NULL) {
-        printf("Rank %d: Failed to allocate memory for local data\n", world_rank);
+        perror("Rank : Failed to allocate memory for local data\n");
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
-    MPI_Scatter(data, localDataSize, MPI_INT, 
-            localData, localDataSize, MPI_INT, ROOT_RANK, MPI_COMM_WORLD);
-    
-    // Create the local histogram array
-    int* localHistogram = (int*) calloc(NUM_BINS, sizeof(int));
-    if (localHistogram == NULL) {
-        printf("Rank %d: Failed to allocate memory for local histogram\n");
+    MPI_Scatter(data, localDataSize, MPI_INT,
+                localData, localDataSize, MPI_INT,
+                rootRank, MPI_COMM_WORLD);
+
+    // Calculate the local histogram for the bins assigned to this process.
+    int* localHistogram = (int*)calloc(myNumBins, sizeof(int));
+     if (localHistogram == NULL) {
+        perror("Rank : Failed to allocate memory for local histogram\n");
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
-    // Calculate the local histogram
     for (int i = 0; i < localDataSize; ++i) {
-        int binindex = (int)((localData[i] - minVal) / binWidth);
-        // Handle the edge case where val == MAX_VAL
-        if (binindex == numBins) {
-            binIndex = numBins - 1;
+        int binIndex = (int)((localData[i] - minVal) / binWidth);
+        if (binIndex >= myStartBin && binIndex < myStartBin + myNumBins) {
+             localHistogram[binIndex - myStartBin]++;
         }
-
-        // increment the bin associated with the data
-        localHistogram[binIndex]++;
     }
-
-    // Gather the local histogram at the root process
+    // Gather the local histograms at the root process
     int* globalHistogram = NULL;
-    if (world_rank == ROOT_RANK) {
-        globalHistogram = (int*) calloc(NUM_BINS, sizeof(int));
-        if (globalHistogram == NULL) {
-            printf("Rank %d: Failed to allocate memory for global histogram\n");
+    if (world_rank == rootRank) {
+        globalHistogram = (int*)calloc(numBins, sizeof(int));
+         if (globalHistogram == NULL) {
+            perror("Rank : Failed to allocate memory for global histogram\n");
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
     }
 
-    MPI_Reduce(localHistogram, globalHistogram, NUM_BINS, MPI_INT, MPI_SUM, ROOT_RANK, MPI_COMM_WORLD);
+    // Use MPI_Gatherv to gather the variable-sized local histograms
+    int* recvcounts = NULL;
+    int* displs = NULL;
+    if (world_rank == rootRank) {
+        recvcounts = (int*)malloc(world_size * sizeof(int));
+        displs = (int*)malloc(world_size * sizeof(int));
+        int k;
+        for(k=0; k< world_size; k++){
+            if(k < extraBins){
+                recvcounts[k] = binsPerProcess + 1;
+                displs[k] = k * (binsPerProcess + 1);
+            }
+            else{
+                recvcounts[k] = binsPerProcess;
+                displs[k] = extraBins * (binsPerProcess + 1) + (k - extraBins) * binsPerProcess;
+            }
+        }
+    }
+    MPI_Gatherv(localHistogram, myNumBins, MPI_INT,
+                  globalHistogram, recvcounts, displs, MPI_INT,
+                  rootRank, MPI_COMM_WORLD);
 
-    // Free all memory
-    if (world_rank == ROOT_RANK) {
+    // Print the global histogram on the root process
+    if (world_rank == rootRank) {
+        printf("Histogram of %d values into %d bins:\n", dataSize, numBins);
+        for (int i = 0; i < numBins; ++i) {
+            printf("Bin %d: %d values\n", i + 1, globalHistogram[i]);
+        }
+    }
+
+    // Clean up memory
+    if (world_rank == rootRank) {
         free(data);
         free(globalHistogram);
+        free(recvcounts);
+        free(displs);
     }
     free(localData);
     free(localHistogram);
-    
+
+    // Finalize MPI
     MPI_Finalize();
     return 0;
 }
